@@ -25,49 +25,62 @@ app = Flask(__name__)
 
 @app.get("/")
 def home():
-    return "Social Video Bot is running."
+    return "Social Video Downloader Bot is running."
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👋 Welcome!\n\n"
-        "Send me a supported video link that you have permission to download.\n\n"
-        "📥 I'll download the video and send it back to you."
+        "Send me a public video link and I'll try to download it."
     )
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "📥 Send me a supported video URL.\n\n"
-        "Only download content you own or have permission to download."
+        "📥 Send a public video URL.\n\n"
+        "The bot supports publicly accessible content that can legally "
+        "be downloaded."
     )
 
 
 def download_video(url, folder):
-    output = str(Path(folder) / "%(title).80s.%(ext)s")
+    output = str(Path(folder) / "video.%(ext)s")
 
-    options = {
+    ydl_opts = {
         "outtmpl": output,
+        "noplaylist": True,
+        "quiet": False,
+        "no_warnings": False,
+
+        # Prefer MP4 formats containing both video and audio.
+        # Keep the file reasonably small for Telegram.
         "format": (
+            "best[ext=mp4][vcodec!=none][acodec!=none][filesize<50M]/"
             "best[ext=mp4][vcodec!=none][acodec!=none]/"
             "best[ext=mp4]/best"
         ),
-        "noplaylist": True,
-        "max_filesize": 50 * 1024 * 1024,
-        "quiet": True,
-        "no_warnings": True,
-        "socket_timeout": 30,
+
+        "socket_timeout": 60,
+        "retries": 3,
+        "fragment_retries": 3,
+        "nocheckcertificate": True,
     }
 
-    with yt_dlp.YoutubeDL(options) as ydl:
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
-        downloaded = ydl.prepare_filename(info)
 
-        files = list(Path(folder).glob("*"))
+        files = [
+            p for p in Path(folder).glob("*")
+            if p.is_file()
+        ]
+
         if not files:
-            raise RuntimeError("Downloaded file was not found.")
+            raise RuntimeError("yt-dlp finished but no video file was created.")
 
-        return str(files[0])
+        # Use the largest downloaded file.
+        video_file = max(files, key=lambda p: p.stat().st_size)
+
+        return str(video_file)
 
 
 async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -84,40 +97,59 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = match.group(0)
 
     status = await update.message.reply_text(
-        "🔍 Link received.\n\n"
-        "⏳ Downloading video..."
+        "🔍 Link received...\n⏳ Downloading..."
     )
 
     try:
         with tempfile.TemporaryDirectory() as temp_folder:
+
             file_path = await asyncio.to_thread(
                 download_video,
                 url,
-                temp_folder,
+                temp_folder
             )
 
-            await status.edit_text("📤 Uploading video...")
+            file_size = Path(file_path).stat().st_size
+
+            # Telegram Bot API upload limit safety check.
+            if file_size > 49 * 1024 * 1024:
+                await status.edit_text(
+                    "⚠️ The downloaded video is too large to send through Telegram."
+                )
+                return
+
+            await status.edit_text(
+                "📤 Download complete!\nUploading..."
+            )
 
             with open(file_path, "rb") as video:
                 await update.message.reply_video(
                     video=video,
+                    supports_streaming=True,
                     caption="✅ Download complete!"
                 )
 
             await status.delete()
 
-    except Exception as e:
-        print("DOWNLOAD ERROR:", repr(e))
+    except Exception as error:
+        print("========== DOWNLOAD ERROR ==========")
+        print(repr(error))
+        print("URL:", url)
+        print("====================================")
 
         await status.edit_text(
-            "❌ I couldn't download this video.\n\n"
-            "Make sure the link is supported and the content is "
-            "available without login or DRM restrictions."
+            "❌ Download failed.\n\n"
+            "The link may be unsupported, unavailable, "
+            "restricted, or the video may be too large."
         )
 
 
 async def run_bot():
-    application = Application.builder().token(BOT_TOKEN).build()
+    application = (
+        Application.builder()
+        .token(BOT_TOKEN)
+        .build()
+    )
 
     application.add_handler(
         CommandHandler("start", start)
@@ -138,7 +170,7 @@ async def run_bot():
     await application.start()
     await application.updater.start_polling()
 
-    print("🤖 Social Video Bot is running.")
+    print("🤖 Social Video Downloader Bot is running.")
 
     while True:
         await asyncio.sleep(3600)
@@ -146,7 +178,10 @@ async def run_bot():
 
 def start_web_server():
     port = int(os.getenv("PORT", "10000"))
-    app.run(host="0.0.0.0", port=port)
+    app.run(
+        host="0.0.0.0",
+        port=port
+    )
 
 
 if __name__ == "__main__":
