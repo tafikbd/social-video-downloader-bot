@@ -1,4 +1,4 @@
 python-telegram-bot==22.8
-yt-dlp[default]>=2025.11.12
+yt-dlp @ https://github.com/yt-dlp/yt-dlp/archive/master.tar.gz
 yt-dlp-ejs>=0.3.2
 Flask>=3.0.0
