@@ -348,3 +348,18 @@ def build_ydl_options(output_template: str) -> dict:
         opts["js_runtimes"] = {"deno": {"path": DENO_PATH}}
 
     return opts
+from flask import Flask
+import os, threading
+
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot is running!"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
+
+# বট চালু করার আগে Flask থ্রেড চালু করুন
+threading.Thread(target=run_flask, daemon=True).start()
