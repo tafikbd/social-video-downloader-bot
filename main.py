@@ -322,3 +322,29 @@ if __name__ == "__main__":
         allowed_updates=Update.ALL_TYPES,
         drop_pending_updates=True,
     )
+import yt_dlp
+
+def build_ydl_options(output_template: str) -> dict:
+    opts = {
+        "outtmpl": output_template,
+        "quiet": True,
+        "noplaylist": True,
+        "format": "bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[ext=mp4][height<=720]/best[height<=720]/best",
+        "merge_output_format": "mp4",
+        "socket_timeout": 30,
+        "retries": 5,
+        "fragment_retries": 5,
+        "extractor_retries": 5,
+        "retry_sleep": lambda n: min(4 ** n, 120),
+        "sleep_interval_requests": 2,
+        "sleep_interval": 1,
+        "max_sleep_interval": 5,
+        "cookiesfrombrowser": None,
+        "cookiefile": None,
+        "postprocessors": [],
+    }
+
+    if DENO_PATH:
+        opts["js_runtimes"] = {"deno": {"path": DENO_PATH}}
+
+    return opts
